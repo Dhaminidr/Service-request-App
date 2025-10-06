@@ -1,4 +1,4 @@
-// This will catch any unhandled promise rejections and log them
+
 process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
@@ -11,7 +11,12 @@ const mysql = require('mysql2/promise');
 const cors = require('cors');
 require('dotenv').config({ path: '.env' });
 
+const app = express(); 
+const port = 5000;
+
+
 const FRONTEND_URL = 'https://glorious-enthusiasm-production.up.railway.app'; 
+
 
 app.use(cors({
     origin: FRONTEND_URL, 
@@ -20,8 +25,6 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization'], // Add headers your frontend sends
 }));
 
-const app = express();
-const port = 5000;
 
 // Get credentials from .env
 const { MYSQL_HOST, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE } = process.env;
@@ -48,7 +51,7 @@ async function startServer() {
 
         // Middleware
         app.use(bodyParser.json());
-        app.use(cors());
+    
 
         // Admin credentials (for simplicity)
         const adminUser = {
@@ -114,7 +117,7 @@ async function startServer() {
 
                 console.log('✅ Form data saved to database successfully!');
 
-                // Now try to send the email, but don't fail the request if it fails
+               
                 try {
                     const emailData = {
                       name: fullName,
