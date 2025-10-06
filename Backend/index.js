@@ -36,10 +36,10 @@ let pool;
 async function startServer() {
     try {
         pool = mysql.createPool({
-            host: MYSQL_HOST,
-            user: MYSQL_USER,
-            password: MYSQL_PASSWORD,
-            database: MYSQL_DATABASE,
+            host: MYSQLHOST,
+            user: MYSQLUSER,
+            password: MYSQLPASSWORD,
+            database: MYSQLDATABASE,
             waitForConnections: true,
             connectionLimit: 10,
             queueLimit: 0,
