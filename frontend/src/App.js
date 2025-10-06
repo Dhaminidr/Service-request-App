@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { BrowserRouter, Routes, Route, Link, useNavigate } from 'react-router-dom';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import axios from 'axios';
+
 
 // Home Page Component
 const HomePage = () => {
@@ -24,7 +25,7 @@ const HomePage = () => {
         event.preventDefault();
         console.log('Sending Form Data:', formData);
         try {
-            const response = await axios.post('http://localhost:5000/api/form', {
+            const response = await axios.post('https://service-request-app-production.up.railway.app/api/form', {
                 fullName: formData.fullName,
                 contactNumber: formData.contactNumber,
                 serviceType: formData.serviceType,
@@ -153,7 +154,7 @@ const AdminPage = () => {
     const handleLogin = async (e) => {
         e.preventDefault();
         try {
-            const response = await axios.post('http://localhost:5000/api/admin/login', { username, password });
+            const response = await axios.post('https://service-request-app-production.up.railway.app/api/admin/login', { username, password });
 
             if (response.status === 200) {
                 localStorage.setItem('token', response.data.token);
@@ -174,11 +175,11 @@ const AdminPage = () => {
         navigate('/admin');
     };
 
-    const fetchSubmissions = async (token) => {
+   const fetchSubmissions = useCallback(async (token) => {
         try {
-            const response = await axios.get('http://localhost:5000/api/forms', {
+            const response = await axios.get('https://service-request-app-production.up.railway.app/api/forms', {
                 headers: { 'Authorization': `Bearer ${token}` },
-            });
+             });
 
             if (response.status === 200) {
                 const formattedSubmissions = response.data.map(item => ({
@@ -200,13 +201,13 @@ const AdminPage = () => {
             alert('Failed to fetch submissions.');
             handleLogout();
         }
-    };
+    }, [handleLogout, setSubmissions]);
 
     const handleResendMail = async (submissionId) => {
         const token = localStorage.getItem('token');
         try {
             const response = await axios.post(
-                `http://localhost:5000/api/forms/${submissionId}/resend`,
+                `https://service-request-app-production.up.railway.app/api/forms/${submissionId}/resend`,
                 {},
                 {
                     headers: {
