@@ -25,7 +25,7 @@ const HomePage = () => {
         event.preventDefault();
         console.log('Sending Form Data:', formData);
         try {
-            const response = await axios.post('service-request-app-production.up.railway.app/api/form', {
+            const response = await axios.post('https://service-request-app-production.up.railway.app/api/form', {
                 fullName: formData.fullName,
                 contactNumber: formData.contactNumber,
                 serviceType: formData.serviceType,
@@ -154,7 +154,7 @@ const AdminPage = () => {
     const handleLogin = async (e) => {
         e.preventDefault();
         try {
-            const response = await axios.post('service-request-app-production.up.railway.app/api/admin/login', { username, password });
+            const response = await axios.post('https://service-request-app-production.up.railway.app/api/admin/login', { username, password });
 
             if (response.status === 200) {
                 localStorage.setItem('token', response.data.token);
@@ -177,7 +177,7 @@ const AdminPage = () => {
 
    const fetchSubmissions = useCallback(async (token) => {
         try {
-            const response = await axios.get('service-request-app-production.up.railway.app/api/forms', {
+            const response = await axios.get('https://service-request-app-production.up.railway.app/api/forms', {
                 headers: { 'Authorization': `Bearer ${token}` },
              });
 
@@ -207,7 +207,7 @@ const AdminPage = () => {
         const token = localStorage.getItem('token');
         try {
             const response = await axios.post(
-                `service-request-app-production.up.railway.app/api/forms/${submissionId}/resend`,
+                `https://service-request-app-production.up.railway.app/api/forms/${submissionId}/resend`,
                 {},
                 {
                     headers: {
