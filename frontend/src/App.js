@@ -179,7 +179,7 @@ const AdminPage = () => {
         try {
             const response = await axios.get('service-request-app-production.up.railway.app/api/forms', {
                 headers: { 'Authorization': `Bearer ${token}` },
-            }, [handleLogout, setSubmissions]);
+             [handleLogout, setSubmissions])};
 
             if (response.status === 200) {
                 const formattedSubmissions = response.data.map(item => ({
