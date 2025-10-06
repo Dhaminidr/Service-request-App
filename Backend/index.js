@@ -11,6 +11,15 @@ const mysql = require('mysql2/promise');
 const cors = require('cors');
 require('dotenv').config({ path: '.env' });
 
+const FRONTEND_URL = 'https://glorious-enthusiasm-production.up.railway.app'; 
+
+app.use(cors({
+    origin: FRONTEND_URL, 
+    credentials: true, // This is important for authentication/cookies
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization'], // Add headers your frontend sends
+}));
+
 const app = express();
 const port = 5000;
 
