@@ -1,0 +1,9 @@
+:80 {
+  # Caddy serves files from the 'build' folder, 
+  # which is inside the service's root (the 'frontend' directory).
+  root * build
+  
+  # Standard Caddy setup for a React Router/CRA static site
+  file_server
+  try_files {path} /index.html
+}
