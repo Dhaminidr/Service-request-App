@@ -1,4 +1,3 @@
-
 process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
@@ -9,7 +8,9 @@ const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 const mysql = require('mysql2/promise');
 const cors = require('cors');
-require('dotenv').config({ path: '.env' });
+// NOTE: .env is only used in local development. For Railway, all variables 
+// must be added directly to the Railway service's Variables tab.
+require('dotenv').config({ path: '.env' }); 
 
 const app = express(); 
 const port = 5000;
@@ -20,13 +21,15 @@ const FRONTEND_URL = 'https://glorious-enthusiasm-production.up.railway.app';
 
 app.use(cors({
     origin: FRONTEND_URL, 
-    credentials: true, // This is important for authentication/cookies
+    credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization'], // Add headers your frontend sends
+    allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
 
-// Get credentials from .env
+// Get credentials from process.env (Railway Variables)
+// NOTE: For Railway, these MUST be set to the credentials of your Railway MySQL service.
+// (e.g., MYSQL_HOST should be the RAILWAY_HOST_URL, not 'localhost')
 const { MYSQL_HOST, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE } = process.env;
 const JWT_SECRET = process.env.JWT_SECRET;
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
@@ -56,7 +59,7 @@ async function startServer() {
         // Admin credentials (for simplicity)
         const adminUser = {
             username: 'admin',
-            password: 'admin_password',
+            password: 'admin_password', // Change this in a real application!
         };
 
         // Authentication Middleware
@@ -73,8 +76,9 @@ async function startServer() {
 
         const sendSubmissionEmail = async (submission) => {
             const mailOptions = {
-                from: `"New Submission" <${process.env.EMAIL_USER}>`,
-                to: ADMIN_EMAIL,
+                // SENDER EMAIL must be the same as EMAIL_USER
+                from: `"New Submission" <${process.env.EMAIL_USER}>`, 
+                to: ADMIN_EMAIL, // Recipient email address
                 subject: `New Form Submission: ${String(submission.service)}`,
                 html: `
                     <h2>New Contact Form Submission</h2>
@@ -85,14 +89,15 @@ async function startServer() {
                     <p><strong>Submission Date:</strong> ${String(submission.created_at)}</p>
                 `,
             };
-
+            
+            // Nodemailer configuration for Gmail
             const transporter = nodemailer.createTransport({
                 host: 'smtp.gmail.com',
                 port: 465,
-                secure: true,
+                secure: true, // Use secure: true for port 465
                 auth: {
                     user: process.env.EMAIL_USER,
-                    pass: process.env.EMAIL_PASS,
+                    pass: process.env.EMAIL_PASS, // This must be the Google App Password
                 },
             });
 
@@ -100,7 +105,10 @@ async function startServer() {
                 await transporter.sendMail(mailOptions);
                 console.log('Email sent successfully!');
             } catch (error) {
-                console.error('Error sending email:', error);
+                console.error('--- ERROR: FAILED TO SEND EMAIL ---');
+                // Log the full error to help diagnose authentication/connection issues
+                console.error(error); 
+                console.error('-------------------------------------');
                 throw new Error('Failed to send email');
             }
         };
@@ -110,32 +118,35 @@ async function startServer() {
             console.log('Received a POST request to /api/form');
             try {
                 const { fullName, contactNumber, serviceType, projectDescription } = req.body;
-                const submissionData = [fullName, contactNumber, serviceType, projectDescription, new Date()];
+                const currentDate = new Date();
+                const submissionData = [fullName, contactNumber, serviceType, projectDescription, currentDate];
                 const query = 'INSERT INTO submissions (name, contact_number, service, description, created_at) VALUES (?, ?, ?, ?, ?)';
 
+                // 1. SAVE DATA
                 await pool.execute(query, submissionData);
-
                 console.log('✅ Form data saved to database successfully!');
 
-               
-                try {
-                    const emailData = {
-                      name: fullName,
-                      contact_number: contactNumber,
-                      service: serviceType,
-                      description: projectDescription,
-                      created_at: new Date(),
-                    };
-                    await sendSubmissionEmail(emailData);
-                    console.log('✅ Email notification sent!');
-                } catch (emailError) {
-                    console.error('❌ Failed to send email notification:', emailError);
-                }
-
+                // 2. RESPOND IMMEDIATELY (Fixes the slow pop-up/no pop-up issue)
                 res.status(200).json({ message: 'Form submitted successfully!' });
+
+                // 3. ASYNCHRONOUSLY SEND EMAIL (Non-blocking background task)
+                const emailData = {
+                    name: fullName,
+                    contact_number: contactNumber,
+                    service: serviceType,
+                    description: projectDescription,
+                    created_at: currentDate,
+                };
+                
+                // We use .then/.catch here and DON'T await, so the response isn't blocked.
+                sendSubmissionEmail(emailData) 
+                    .then(() => console.log('✅ Asynchronous email notification sent!'))
+                    .catch((emailError) => console.error('❌ Asynchronous email failed:', emailError.message));
+                
             } catch (error) {
-                console.error('❌ Submission error:', error);
-                res.status(500).json({ message: 'Error submitting form. Please try again.' });
+                console.error('❌ CRITICAL Submission error:', error);
+                // This block is executed if DB connection/write fails.
+                res.status(500).json({ message: 'Error submitting form. Please check backend logs (DB issue).' });
             }
         });
 
