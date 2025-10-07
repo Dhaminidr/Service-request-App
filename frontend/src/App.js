@@ -47,7 +47,8 @@ const HomePage = ({ showStatus }) => {
                 projectDescription: formData.projectDescription,
             });
 
-            if (response.status === 200) {
+            // FIX: Check if the response status is any success code (200-299)
+            if (response.status >= 200 && response.status < 300) {
                 showStatus('Form submitted successfully! You will be contacted soon.', 'success');
                 setFormData({
                     fullName: '',
@@ -242,7 +243,8 @@ const AdminPage = ({ showStatus }) => {
                 }
             );
 
-            if (response.status === 200) {
+            // Check if the response status is any success code (200-299)
+            if (response.status >= 200 && response.status < 300) {
                 showStatus('Email resent successfully!', 'success');
             } else {
                 showStatus('Failed to resend email.', 'warning');
