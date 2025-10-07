@@ -30,6 +30,7 @@ app.use(cors({
 // Get credentials from process.env (Railway Variables)
 // NOTE: For Railway, these MUST be set to the credentials of your Railway MySQL service.
 // (e.g., MYSQL_HOST should be the RAILWAY_HOST_URL, not 'localhost')
+// The code below extracts the Host and Port from your connection string if needed.
 const { MYSQL_HOST, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE } = process.env;
 const JWT_SECRET = process.env.JWT_SECRET;
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
@@ -38,8 +39,17 @@ const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 let pool;
 async function startServer() {
     try {
+        // --- START OF DB CONNECTION FIX ---
+        // PUBLIC NETWORKING URL: switchback.proxy.rlwy.net:48445
+        // Extract host and port from the provided string:
+        const RAILWAY_DB_HOST = 'switchback.proxy.rlwy.net';
+        const RAILWAY_DB_PORT = 48445;
+
         pool = mysql.createPool({
-            host: MYSQL_HOST,
+            // Ensure you use the environment variable for the production host:
+            host: MYSQL_HOST || RAILWAY_DB_HOST,
+            // Use the extracted port as it's mandatory for the connection:
+            port: RAILWAY_DB_PORT, 
             user: MYSQL_USER,
             password: MYSQL_PASSWORD,
             database: MYSQL_DATABASE,
@@ -51,6 +61,7 @@ async function startServer() {
         // Check the connection by executing a simple query
         await pool.getConnection();
         console.log('✅ MySQL connected successfully!');
+        // --- END OF DB CONNECTION FIX ---
 
         // Middleware
         app.use(bodyParser.json());
@@ -97,7 +108,8 @@ async function startServer() {
                 secure: true, // Use secure: true for port 465
                 auth: {
                     user: process.env.EMAIL_USER,
-                    pass: process.env.EMAIL_PASS, // This must be the Google App Password
+                    // Use the dedicated Google App Password:
+                    pass: process.env.EMAIL_PASS, 
                 },
             });
 
@@ -144,7 +156,7 @@ async function startServer() {
                     .catch((emailError) => console.error('❌ Asynchronous email failed:', emailError.message));
                 
             } catch (error) {
-                console.error('❌ CRITICAL Submission error:', error);
+                console.error('❌ CRITICAL Submission error (DB Failure):', error);
                 // This block is executed if DB connection/write fails.
                 res.status(500).json({ message: 'Error submitting form. Please check backend logs (DB issue).' });
             }
