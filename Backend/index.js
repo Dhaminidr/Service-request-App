@@ -28,10 +28,14 @@ app.use(cors({
 
 
 // Get credentials from process.env (Railway Variables)
-// NOTE: For Railway, these MUST be set to the credentials of your Railway MySQL service.
-// (e.g., MYSQL_HOST should be the RAILWAY_HOST_URL, not 'localhost')
-// The code below extracts the Host and Port from your connection string if needed.
-const { MYSQL_HOST, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE } = process.env;
+// NOTE: For Railway, these MUST be set to the INTERNAL network credentials of your MySQL service.
+const { 
+    MYSQL_HOST, 
+    MYSQL_USER, 
+    MYSQL_PASSWORD, 
+    MYSQL_DATABASE,
+    MYSQL_PORT // We will use this variable now, if provided by Railway
+} = process.env; 
 const JWT_SECRET = process.env.JWT_SECRET;
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 
@@ -39,17 +43,16 @@ const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 let pool;
 async function startServer() {
     try {
-        // --- START OF DB CONNECTION FIX ---
-        // PUBLIC NETWORKING URL: switchback.proxy.rlwy.net:48445
-        // Extract host and port from the provided string:
-        const RAILWAY_DB_HOST = 'switchback.proxy.rlwy.net';
-        const RAILWAY_DB_PORT = 48445;
-
+        // --- DB CONNECTION FIX: Use internal network variables only ---
+        // We removed the hardcoded public host/port. To connect successfully, 
+        // the environment variables (MYSQL_HOST, etc.) MUST be set to the 
+        // database's INTERNAL networking details within Railway.
+        
         pool = mysql.createPool({
-            // Ensure you use the environment variable for the production host:
-            host: MYSQL_HOST || RAILWAY_DB_HOST,
-            // Use the extracted port as it's mandatory for the connection:
-            port: RAILWAY_DB_PORT, 
+            // MUST be the INTERNAL Railway Hostname (e.g., mysqldb.internal)
+            host: MYSQL_HOST, 
+            // Use the port provided by Railway, or 3306 as the common internal port
+            port: MYSQL_PORT ? parseInt(MYSQL_PORT, 10) : 3306, 
             user: MYSQL_USER,
             password: MYSQL_PASSWORD,
             database: MYSQL_DATABASE,
@@ -224,3 +227,4 @@ async function startServer() {
 }
 
 startServer();
+
