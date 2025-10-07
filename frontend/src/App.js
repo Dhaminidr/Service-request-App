@@ -1,11 +1,26 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { BrowserRouter, Routes, Route, Link, useNavigate } from 'react-router-dom';
-import 'bootstrap/dist/css/bootstrap.min.css';
 import axios from 'axios';
 
+// Reusable Status Message Component (Replaces alert())
+const StatusMessage = ({ message, type, onClose }) => {
+    if (!message) return null;
+
+    return (
+        <div 
+            // Position the message at the top center
+            className={`alert alert-${type} alert-dismissible fade show fixed-top mx-auto mt-3`}
+            role="alert"
+            style={{ maxWidth: '400px', zIndex: 1050 }}
+        >
+            {message}
+            <button type="button" className="btn-close" aria-label="Close" onClick={onClose}></button>
+        </div>
+    );
+};
 
 // Home Page Component
-const HomePage = () => {
+const HomePage = ({ showStatus }) => {
     const [formData, setFormData] = useState({
         fullName: '',
         contactNumber: '',
@@ -33,7 +48,7 @@ const HomePage = () => {
             });
 
             if (response.status === 200) {
-                alert('Form submitted successfully!');
+                showStatus('Form submitted successfully! You will be contacted soon.', 'success');
                 setFormData({
                     fullName: '',
                     contactNumber: '',
@@ -41,11 +56,11 @@ const HomePage = () => {
                     projectDescription: '',
                 });
             } else {
-                alert('Error submitting form.');
+                showStatus('Error submitting form. Status: ' + response.status, 'danger');
             }
         } catch (error) {
             console.error('Error:', error);
-            alert('Error submitting form.');
+            showStatus('An unexpected error occurred while submitting the form.', 'danger');
         }
     };
 
@@ -61,9 +76,9 @@ const HomePage = () => {
             </div>
             <div className="row justify-content-center">
                 <div className="col-md-8 col-lg-6">
-                    <div className="card shadow-sm border-0">
+                    <div className="card shadow-lg border-0 rounded-3">
                         <div className="card-body p-4 p-md-5">
-                            <h2 className="card-title text-center mb-4">Service Request Form</h2>
+                            <h2 className="card-title text-center mb-4 text-secondary">Service Request Form</h2>
                             <p className="text-center text-muted mb-4">
                                 Tell us about your project and we'll help bring your vision to life.
                             </p>
@@ -121,7 +136,7 @@ const HomePage = () => {
                                     />
                                 </div>
                                 <div className="d-grid gap-2">
-                                    <button type="submit" className="btn btn-primary btn-lg">
+                                    <button type="submit" className="btn btn-primary btn-lg rounded-pill">
                                         Submit Request
                                     </button>
                                 </div>
@@ -135,13 +150,49 @@ const HomePage = () => {
 };
 
 // Admin Dashboard Component
-// Admin Dashboard Component
-const AdminPage = () => {
+const AdminPage = ({ showStatus }) => {
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [submissions, setSubmissions] = useState([]);
     const navigate = useNavigate();
+
+    // handleLogout is defined with useCallback to avoid dependency issues in fetchSubmissions
+    const handleLogout = useCallback(() => {
+        localStorage.removeItem('token');
+        setIsLoggedIn(false);
+        setSubmissions([]); // Clear data on logout
+        navigate('/admin');
+        showStatus('Logged out successfully.', 'info');
+    }, [navigate, showStatus]);
+
+    const fetchSubmissions = useCallback(async (token) => {
+        try {
+            const response = await axios.get('https://service-request-app-production.up.railway.app/api/forms', {
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+
+            if (response.status === 200) {
+                const formattedSubmissions = response.data.map(item => ({
+                    id: item.Id,
+                    fullName: item.name,
+                    contactNumber: item.contact_number,
+                    serviceType: item.service,
+                    projectDescription: item.description,
+                    // Format date nicely
+                    createdAt: item.created_at ? new Date(item.created_at).toLocaleString() : 'N/A',
+                }));
+                setSubmissions(formattedSubmissions);
+            } else {
+                showStatus('Failed to fetch submissions. Please log in again.', 'warning');
+                handleLogout();
+            }
+        } catch (error) {
+            console.error('Fetch error:', error);
+            showStatus('Failed to fetch submissions. Check network or server status.', 'danger');
+            handleLogout();
+        }
+    }, [handleLogout, showStatus]);
 
     useEffect(() => {
         const token = localStorage.getItem('token');
@@ -149,7 +200,8 @@ const AdminPage = () => {
             setIsLoggedIn(true);
             fetchSubmissions(token);
         }
-    }, []);
+    }, [fetchSubmissions]);
+
 
     const handleLogin = async (e) => {
         e.preventDefault();
@@ -160,51 +212,24 @@ const AdminPage = () => {
                 localStorage.setItem('token', response.data.token);
                 setIsLoggedIn(true);
                 fetchSubmissions(response.data.token);
+                showStatus('Login successful!', 'success');
             } else {
-                alert('Invalid credentials');
+                // If status is not 200 but no error thrown (e.g., 401 handled by server logic)
+                showStatus('Invalid credentials. Please try again.', 'warning');
             }
         } catch (error) {
             console.error('Login error:', error);
-            alert('Login failed');
+            showStatus('Login failed due to a server error.', 'danger');
         }
     };
-
-    const handleLogout = () => {
-        localStorage.removeItem('token');
-        setIsLoggedIn(false);
-        navigate('/admin');
-    };
-
-   const fetchSubmissions = useCallback(async (token) => {
-        try {
-            const response = await axios.get('https://service-request-app-production.up.railway.app/api/forms', {
-                headers: { 'Authorization': `Bearer ${token}` },
-             });
-
-            if (response.status === 200) {
-                const formattedSubmissions = response.data.map(item => ({
-                    id: item.Id,
-                    fullName: item.name,
-                    contactNumber: item.contact_number,
-                    serviceType: item.service,
-                    projectDescription: item.description,
-                    createdAt: item.created_at,
-                }));
-                console.log('Formatted submissions:', formattedSubmissions);
-                setSubmissions(formattedSubmissions);
-            } else {
-                alert('Failed to fetch submissions. Please log in again.');
-                handleLogout();
-            }
-        } catch (error) {
-            console.error('Fetch error:', error);
-            alert('Failed to fetch submissions.');
-            handleLogout();
-        }
-    }, [handleLogout, setSubmissions]);
 
     const handleResendMail = async (submissionId) => {
         const token = localStorage.getItem('token');
+        if (!token) {
+             showStatus('You must be logged in to perform this action.', 'warning');
+             return;
+        }
+
         try {
             const response = await axios.post(
                 `https://service-request-app-production.up.railway.app/api/forms/${submissionId}/resend`,
@@ -218,20 +243,21 @@ const AdminPage = () => {
             );
 
             if (response.status === 200) {
-                alert('Email resent successfully!');
+                showStatus('Email resent successfully!', 'success');
             } else {
-                alert('Failed to resend email.');
+                showStatus('Failed to resend email.', 'warning');
             }
         } catch (error) {
             console.error('Resend email error:', error);
-            alert('Failed to resend email.');
+            showStatus('Failed to resend email due to a network or server error.', 'danger');
         }
     };
 
+    // Render Login Form if not logged in
     if (!isLoggedIn) {
         return (
-            <div className="container d-flex justify-content-center align-items-center" style={{ minHeight: '100vh' }}>
-                <div className="card shadow" style={{ width: '100%', maxWidth: '400px' }}>
+            <div className="container d-flex justify-content-center align-items-center" style={{ minHeight: '80vh' }}>
+                <div className="card shadow-lg rounded-3" style={{ width: '100%', maxWidth: '400px' }}>
                     <div className="card-body p-4">
                         <h3 className="card-title text-center mb-4">Admin Login</h3>
                         <form onSubmit={handleLogin}>
@@ -244,7 +270,7 @@ const AdminPage = () => {
                                 <input type="password" className="form-control" id="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
                             </div>
                             <div className="d-grid">
-                                <button type="submit" className="btn btn-primary">Log In</button>
+                                <button type="submit" className="btn btn-primary rounded-pill">Log In</button>
                             </div>
                         </form>
                     </div>
@@ -253,36 +279,45 @@ const AdminPage = () => {
         );
     }
 
+    // Render Admin Dashboard if logged in
     return (
         <div className="container my-5">
             <div className="d-flex justify-content-between align-items-center mb-4">
-                <h3 className="card-title mb-0">Form Submissions</h3>
-                <button className="btn btn-danger" onClick={handleLogout}>Log Out</button>
+                <h3 className="card-title mb-0 text-primary">Form Submissions</h3>
+                <button className="btn btn-danger rounded-pill px-4" onClick={handleLogout}>Log Out</button>
             </div>
-            <div className="card shadow">
-                <div className="card-body">
+            <div className="card shadow-lg rounded-3">
+                <div className="card-body p-0">
                     <div className="table-responsive">
-                        <table className="table table-striped table-hover">
+                        <table className="table table-striped table-hover mb-0">
                             <thead>
                                 <tr>
-                                    <th>Name</th>
-                                    <th>Contact Number</th>
-                                    <th>Service</th>
-                                    <th>Description</th>
-                                    <th>Date Submitted</th>
-                                    <th>Actions</th>
+                                    <th className="text-nowrap">Name</th>
+                                    <th className="text-nowrap">Contact Number</th>
+                                    <th className="text-nowrap">Service</th>
+                                    <th className="text-nowrap">Description</th>
+                                    <th className="text-nowrap">Date Submitted</th>
+                                    <th className="text-nowrap">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {submissions.map((submission) => (
                                     <tr key={submission.id}>
-                                        <td>{submission.fullName}</td>
-                                        <td>{submission.contactNumber}</td>
-                                        <td>{submission.serviceType}</td>
-                                        <td>{submission.projectDescription}</td>
-                                        <td>{new Date(submission.createdAt).toLocaleString()}</td>
+                                        <td className="text-nowrap">{submission.fullName}</td>
+                                        <td className="text-nowrap">{submission.contactNumber}</td>
+                                        <td className="text-nowrap">{submission.serviceType}</td>
                                         <td>
-                                            <button className="btn btn-sm btn-info" onClick={() => handleResendMail(submission.id)}>
+                                            {/* Allow long descriptions to be scrollable but contained */}
+                                            <div style={{ maxHeight: '60px', overflowY: 'auto', maxWidth: '300px' }}>
+                                                {submission.projectDescription}
+                                            </div>
+                                        </td>
+                                        <td className="text-nowrap">{submission.createdAt}</td>
+                                        <td className="text-nowrap">
+                                            <button 
+                                                className="btn btn-sm btn-info text-white rounded-pill" 
+                                                onClick={() => handleResendMail(submission.id)}
+                                            >
                                                 Resend Mail
                                             </button>
                                         </td>
@@ -293,18 +328,49 @@ const AdminPage = () => {
                     </div>
                 </div>
             </div>
+            {submissions.length === 0 && (
+                <p className="text-center mt-4 text-muted">No submissions found or failed to load data.</p>
+            )}
         </div>
     );
 };
 
 // Main App Component with Routes
 function App() {
+    const [modal, setModal] = useState({ message: '', type: '' });
+
+    // Function to show the status message
+    const showStatus = (message, type) => {
+        setModal({ message, type });
+        // Auto-hide after 5 seconds
+        setTimeout(() => setModal({ message: '', type: '' }), 5000);
+    };
+
     return (
         <BrowserRouter>
-            {/* Navigation Bar */}
-            <nav className="navbar navbar-expand-lg navbar-light bg-light shadow-sm">
+            <StatusMessage
+                message={modal.message}
+                type={modal.type}
+                onClose={() => setModal({ message: '', type: '' })}
+            />
+            {/* Navigation Bar with Mobile Toggler */}
+            <nav className="navbar navbar-expand-lg navbar-light bg-light shadow-sm sticky-top">
                 <div className="container-fluid">
-                    <Link className="navbar-brand" to="/">ServiceHub</Link>
+                    <Link className="navbar-brand text-primary fw-bold" to="/">ServiceHub</Link>
+
+                    {/* This button is CRITICAL for mobile responsiveness */}
+                    <button 
+                        className="navbar-toggler" 
+                        type="button" 
+                        data-bs-toggle="collapse" 
+                        data-bs-target="#navbarNav" 
+                        aria-controls="navbarNav" 
+                        aria-expanded="false" 
+                        aria-label="Toggle navigation"
+                    >
+                        <span className="navbar-toggler-icon"></span>
+                    </button>
+
                     <div className="collapse navbar-collapse" id="navbarNav">
                         <ul className="navbar-nav ms-auto">
                             <li className="nav-item">
@@ -320,8 +386,9 @@ function App() {
 
             {/* Routes */}
             <Routes>
-                <Route path="/" element={<HomePage />} />
-                <Route path="/admin" element={<AdminPage />} />
+                {/* Pass showStatus down to components for non-alert messaging */}
+                <Route path="/" element={<HomePage showStatus={showStatus} />} />
+                <Route path="/admin" element={<AdminPage showStatus={showStatus} />} />
             </Routes>
         </BrowserRouter>
     );
