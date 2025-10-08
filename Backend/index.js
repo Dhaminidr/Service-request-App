@@ -37,9 +37,11 @@ const {
 } = process.env; 
 const JWT_SECRET = process.env.JWT_SECRET;
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
-// EMAIL_USER and EMAIL_PASS are now used here for Gmail
+// EMAIL_USER (must be 'apikey') and EMAIL_PASS (must be API Key) are for AUTHENTICATION
 const EMAIL_USER = process.env.EMAIL_USER;
 const EMAIL_PASS = process.env.EMAIL_PASS; 
+// NEW: SENDGRID_SENDER_EMAIL must be the actual verified email address
+const SENDGRID_SENDER_EMAIL = process.env.SENDGRID_SENDER_EMAIL; 
 
 // Connect to MySQL database
 let pool;
@@ -86,9 +88,16 @@ async function startServer() {
         };
 
         const sendSubmissionEmail = async (submission) => {
+            
+            // Check if SENDER_EMAIL is available
+            if (!SENDGRID_SENDER_EMAIL) {
+                 console.error('❌ Configuration Error: SENDGRID_SENDER_EMAIL is not set.');
+                 throw new Error('Email sender configuration missing.');
+            }
+
             const mailOptions = {
-                // The 'from' email MUST be one that you verify in SendGrid
-                from: `"New Submission" <${EMAIL_USER}>`, 
+                // IMPORTANT: This 'from' email MUST be the address you verified in SendGrid
+                from: `"New Submission" <${SENDGRID_SENDER_EMAIL}>`, 
                 to: ADMIN_EMAIL, // Recipient email address
                 subject: `New Form Submission: ${String(submission.service)}`,
                 html: `
@@ -101,25 +110,27 @@ async function startServer() {
                 `,
             };
             
-            // Nodemailer configuration: UPDATED TO USE STARTTLS (Port 587)
-            // This is generally more reliable in deployed environments like Railway
+            // Nodemailer configuration: SWITCHING TO SENDGRID
             const transporter = nodemailer.createTransport({
-                host: 'smtp.gmail.com',
-                port: 587, // Change to standard TLS port
-                secure: false, // Use STARTTLS instead of native SSL
-                requireTLS: true, // Enforce TLS connection
+                host: 'smtp.sendgrid.net', // SendGrid Host
+                port: 587, 
+                secure: false, 
+                requireTLS: true,
                 auth: {
-                    user: EMAIL_USER,
-                    pass: EMAIL_PASS,
+                    // This must be 'apikey' for SendGrid authentication
+                    user: EMAIL_USER, 
+                    // This must be the SendGrid API Key for authentication
+                    pass: EMAIL_PASS, 
                 },
             });
 
             try {
                 await transporter.sendMail(mailOptions);
-                console.log('Email sent successfully!');
+                console.log('Email sent successfully via SendGrid!');
             } catch (error) {
                 console.error('--- ERROR: FAILED TO SEND EMAIL ---');
-                // The error here should now be a clear password/authentication error if it's not a timeout
+                // If you get an error here, it will likely be an Authentication error (401), 
+                // or a Sender Verification error (550).
                 console.error(error); 
                 console.error('-------------------------------------');
                 throw new Error('Failed to send email');
@@ -206,7 +217,7 @@ async function startServer() {
                     created_at: new Date(submission.created_at).toLocaleString(), 
                 };
 
-                // CRITICAL FIX: The entire route relies on the corrected sendSubmissionEmail function
+                // The entire route relies on the corrected sendSubmissionEmail function
                 await sendSubmissionEmail(emailData);
 
                 res.status(200).json({ message: 'Email resent successfully!' });
@@ -228,5 +239,3 @@ async function startServer() {
 }
 
 startServer();
-
-
