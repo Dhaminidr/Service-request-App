@@ -101,12 +101,13 @@ async function startServer() {
                 `,
             };
             
-            // Nodemailer configuration: UPDATED FOR RELIABLE GMAIL SMTP (Port 465)
+            // Nodemailer configuration: UPDATED TO USE STARTTLS (Port 587)
+            // This is generally more reliable in deployed environments like Railway
             const transporter = nodemailer.createTransport({
                 host: 'smtp.gmail.com',
-                port: 465, // CRITICAL CHANGE: Using secure SSL port 465
-                secure: true, // Must be true for port 465
-                // requireTLS is not needed when using secure: true
+                port: 587, // Change to standard TLS port
+                secure: false, // Use STARTTLS instead of native SSL
+                requireTLS: true, // Enforce TLS connection
                 auth: {
                     user: EMAIL_USER,
                     pass: EMAIL_PASS,
@@ -227,4 +228,5 @@ async function startServer() {
 }
 
 startServer();
+
 
