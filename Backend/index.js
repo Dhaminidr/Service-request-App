@@ -40,7 +40,7 @@ const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 // EMAIL_USER (must be 'apikey') and EMAIL_PASS (must be API Key) are for AUTHENTICATION
 const EMAIL_USER = process.env.EMAIL_USER;
 const EMAIL_PASS = process.env.EMAIL_PASS; 
-// NEW: SENDGRID_SENDER_EMAIL must be the actual verified email address
+// REVERTED: Now that the email is verified, we MUST use it here.
 const SENDGRID_SENDER_EMAIL = process.env.SENDGRID_SENDER_EMAIL; 
 
 // Connect to MySQL database
@@ -89,14 +89,14 @@ async function startServer() {
 
         const sendSubmissionEmail = async (submission) => {
             
-            // Check if SENDER_EMAIL is available
-            if (!SENDGRID_SENDER_EMAIL) {
-                 console.error('❌ Configuration Error: SENDGRID_SENDER_EMAIL is not set.');
-                 throw new Error('Email sender configuration missing.');
+            // Check to ensure the critical variables are available
+            if (!ADMIN_EMAIL || !EMAIL_USER || !EMAIL_PASS || !SENDGRID_SENDER_EMAIL) {
+                 console.error('❌ Configuration Error: Email variables are not fully set.');
+                 throw new Error('Email configuration missing.');
             }
 
             const mailOptions = {
-                // IMPORTANT: This 'from' email MUST be the address you verified in SendGrid
+                // REVERTED: Use the verified email address stored in the Railway variable
                 from: `"New Submission" <${SENDGRID_SENDER_EMAIL}>`, 
                 to: ADMIN_EMAIL, // Recipient email address
                 subject: `New Form Submission: ${String(submission.service)}`,
@@ -129,8 +129,8 @@ async function startServer() {
                 console.log('Email sent successfully via SendGrid!');
             } catch (error) {
                 console.error('--- ERROR: FAILED TO SEND EMAIL ---');
-                // If you get an error here, it will likely be an Authentication error (401), 
-                // or a Sender Verification error (550).
+                // The error is likely here now if the API key is wrong or the verified email 
+                // is missing from the environment variables.
                 console.error(error); 
                 console.error('-------------------------------------');
                 throw new Error('Failed to send email');
