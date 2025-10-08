@@ -37,7 +37,7 @@ const {
 } = process.env; 
 const JWT_SECRET = process.env.JWT_SECRET;
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
-// EMAIL_USER and EMAIL_PASS are used here for Gmail
+// EMAIL_USER and EMAIL_PASS are now used here for Gmail
 const EMAIL_USER = process.env.EMAIL_USER;
 const EMAIL_PASS = process.env.EMAIL_PASS; 
 
@@ -87,7 +87,7 @@ async function startServer() {
 
         const sendSubmissionEmail = async (submission) => {
             const mailOptions = {
-                // SENDER EMAIL must be the same as EMAIL_USER
+                // The 'from' email MUST be one that you verify in SendGrid
                 from: `"New Submission" <${EMAIL_USER}>`, 
                 to: ADMIN_EMAIL, // Recipient email address
                 subject: `New Form Submission: ${String(submission.service)}`,
@@ -101,16 +101,15 @@ async function startServer() {
                 `,
             };
             
-            // Nodemailer configuration: GMAIL FINAL ATTEMPT - SWITCHED TO PORT 2525
+            // Nodemailer configuration: FINAL, LAST-RESORT ATTEMPT - PORT 25
             const transporter = nodemailer.createTransport({
                 host: 'smtp.gmail.com',
-                port: 2525, // CRITICAL CHANGE: Trying the rarely blocked alternative port 2525
-                secure: false, // Must be false for port 587/2525
-                requireTLS: true, // Explicitly enable TLS
-                connectionTimeout: 10000, // Increased timeout to 10 seconds
+                port: 25, // CRITICAL CHANGE: Trying the most basic SMTP port
+                secure: false, // Must be false for port 25
+                requireTLS: true, 
                 auth: {
                     user: EMAIL_USER,
-                    pass: EMAIL_PASS, 
+                    pass: EMAIL_PASS,
                 },
             });
 
