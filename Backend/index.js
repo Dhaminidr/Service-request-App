@@ -111,6 +111,10 @@ async function startServer() {
             });
 
             try {
+                // NEW: Verify connection before sending, which forces authentication logging.
+                await transporter.verify(); 
+                console.log("✅ Email transporter verified (login successful).");
+
                 await transporter.sendMail(mailOptions);
                 console.log('Email sent successfully!');
             } catch (error) {
