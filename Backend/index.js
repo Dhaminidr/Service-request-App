@@ -101,12 +101,12 @@ async function startServer() {
                 `,
             };
             
-            // Nodemailer configuration: FINAL, LAST-RESORT ATTEMPT - PORT 25
+            // Nodemailer configuration: UPDATED FOR RELIABLE GMAIL SMTP (Port 465)
             const transporter = nodemailer.createTransport({
                 host: 'smtp.gmail.com',
-                port: 25, // CRITICAL CHANGE: Trying the most basic SMTP port
-                secure: false, // Must be false for port 25
-                requireTLS: true, 
+                port: 465, // CRITICAL CHANGE: Using secure SSL port 465
+                secure: true, // Must be true for port 465
+                // requireTLS is not needed when using secure: true
                 auth: {
                     user: EMAIL_USER,
                     pass: EMAIL_PASS,
@@ -201,14 +201,17 @@ async function startServer() {
                     contact_number: submission.contact_number,
                     service: submission.service,
                     description: submission.description,
-                    created_at: new Date(submission.created_at).toLocaleString(),
+                    // Use a more readable local string format for the resend
+                    created_at: new Date(submission.created_at).toLocaleString(), 
                 };
 
+                // CRITICAL FIX: The entire route relies on the corrected sendSubmissionEmail function
                 await sendSubmissionEmail(emailData);
 
                 res.status(200).json({ message: 'Email resent successfully!' });
             } catch (error) {
                 console.error('❌ Failed to resend email:', error);
+                // Ensure the 500 status is sent on email failure
                 res.status(500).json({ message: 'Failed to resend email' });
             }
         });
@@ -224,3 +227,4 @@ async function startServer() {
 }
 
 startServer();
+
