@@ -37,6 +37,9 @@ const {
 } = process.env; 
 const JWT_SECRET = process.env.JWT_SECRET;
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
+// EMAIL_USER and EMAIL_PASS are used here for Gmail
+const EMAIL_USER = process.env.EMAIL_USER;
+const EMAIL_PASS = process.env.EMAIL_PASS; 
 
 // Connect to MySQL database
 let pool;
@@ -85,7 +88,7 @@ async function startServer() {
         const sendSubmissionEmail = async (submission) => {
             const mailOptions = {
                 // SENDER EMAIL must be the same as EMAIL_USER
-                from: `"New Submission" <${process.env.EMAIL_USER}>`, 
+                from: `"New Submission" <${EMAIL_USER}>`, 
                 to: ADMIN_EMAIL, // Recipient email address
                 subject: `New Form Submission: ${String(submission.service)}`,
                 html: `
@@ -98,28 +101,25 @@ async function startServer() {
                 `,
             };
             
-            // Nodemailer configuration for Gmail: USES PORT 587 (Explicit TLS)
+            // Nodemailer configuration: REVERTED TO GMAIL (Port 587) + INCREASED TIMEOUT
             const transporter = nodemailer.createTransport({
                 host: 'smtp.gmail.com',
                 port: 587, 
                 secure: false, // Must be false for port 587
                 requireTLS: true, // Explicitly enable TLS
+                connectionTimeout: 10000, // INCREASED TIMEOUT to 10 seconds (default is 5s)
                 auth: {
-                    user: process.env.EMAIL_USER,
-                    pass: process.env.EMAIL_PASS, 
+                    user: EMAIL_USER,
+                    pass: EMAIL_PASS, 
                 },
             });
 
             try {
-                // NEW: Verify connection before sending, which forces authentication logging.
-                await transporter.verify(); 
-                console.log("✅ Email transporter verified (login successful).");
-
                 await transporter.sendMail(mailOptions);
                 console.log('Email sent successfully!');
             } catch (error) {
                 console.error('--- ERROR: FAILED TO SEND EMAIL ---');
-                // Log the full error to help diagnose authentication/connection issues
+                // The error here should now be a clear password/authentication error if it's not a timeout
                 console.error(error); 
                 console.error('-------------------------------------');
                 throw new Error('Failed to send email');
