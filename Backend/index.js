@@ -101,13 +101,13 @@ async function startServer() {
                 `,
             };
             
-            // Nodemailer configuration: REVERTED TO GMAIL (Port 587) + INCREASED TIMEOUT
+            // Nodemailer configuration: GMAIL FINAL ATTEMPT - SWITCHED TO PORT 2525
             const transporter = nodemailer.createTransport({
                 host: 'smtp.gmail.com',
-                port: 587, 
-                secure: false, // Must be false for port 587
+                port: 2525, // CRITICAL CHANGE: Trying the rarely blocked alternative port 2525
+                secure: false, // Must be false for port 587/2525
                 requireTLS: true, // Explicitly enable TLS
-                connectionTimeout: 10000, // INCREASED TIMEOUT to 10 seconds (default is 5s)
+                connectionTimeout: 10000, // Increased timeout to 10 seconds
                 auth: {
                     user: EMAIL_USER,
                     pass: EMAIL_PASS, 
