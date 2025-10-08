@@ -28,13 +28,12 @@ app.use(cors({
 
 
 // Get credentials from process.env (Railway Variables)
-// NOTE: For Railway, these MUST be set to the INTERNAL network credentials of your MySQL service.
 const { 
     MYSQL_HOST, 
     MYSQL_USER, 
     MYSQL_PASSWORD, 
     MYSQL_DATABASE,
-    MYSQL_PORT // We will use this variable now, if provided by Railway
+    MYSQL_PORT
 } = process.env; 
 const JWT_SECRET = process.env.JWT_SECRET;
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
@@ -43,10 +42,6 @@ const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 let pool;
 async function startServer() {
     try {
-        // --- DB CONNECTION FIX: Use internal network variables only ---
-        // We removed the hardcoded public host/port. To connect successfully, 
-        // the environment variables (MYSQL_HOST, etc.) MUST be set to the 
-        // database's INTERNAL networking details within Railway.
         
         pool = mysql.createPool({
             // MUST be the INTERNAL Railway Hostname (e.g., mysqldb.internal)
@@ -64,8 +59,7 @@ async function startServer() {
         // Check the connection by executing a simple query
         await pool.getConnection();
         console.log('✅ MySQL connected successfully!');
-        // --- END OF DB CONNECTION FIX ---
-
+        
         // Middleware
         app.use(bodyParser.json());
     
@@ -104,14 +98,14 @@ async function startServer() {
                 `,
             };
             
-            // Nodemailer configuration for Gmail
+            // Nodemailer configuration for Gmail: USES PORT 587 (Explicit TLS)
             const transporter = nodemailer.createTransport({
                 host: 'smtp.gmail.com',
-                port: 465,
-                secure: true, // Use secure: true for port 465
+                port: 587, 
+                secure: false, // Must be false for port 587
+                requireTLS: true, // Explicitly enable TLS
                 auth: {
                     user: process.env.EMAIL_USER,
-                    // Use the dedicated Google App Password:
                     pass: process.env.EMAIL_PASS, 
                 },
             });
@@ -227,4 +221,3 @@ async function startServer() {
 }
 
 startServer();
-
