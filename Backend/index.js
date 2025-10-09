@@ -37,10 +37,10 @@ const { 
 } = process.env; 
 const JWT_SECRET = process.env.JWT_SECRET;
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
-// EMAIL_USER (must be 'apikey') and EMAIL_PASS (must be API Key) are for AUTHENTICATION
+// EMAIL_USER (must be the full Zoho email address) and EMAIL_PASS (must be the Zoho App Password)
 const EMAIL_USER = process.env.EMAIL_USER;
 const EMAIL_PASS = process.env.EMAIL_PASS; 
-// Assuming you have this set in your Railway variables to the verified sender
+// This should be set in your Railway variables to the verified sender email address
 const SENDGRID_SENDER_EMAIL = process.env.SENDGRID_SENDER_EMAIL; 
 
 // Connect to MySQL database
@@ -87,23 +87,26 @@ async function startServer() {
             }
         };
 
-        // MODIFIED: Added specific error handling and checks for debugging.
+        // MODIFIED: Updated for Zoho Mail settings.
         const sendSubmissionEmail = async (submission) => {
             
             // CHECK 1: Ensure critical variables are present
             if (!ADMIN_EMAIL || !EMAIL_USER || !EMAIL_PASS || !SENDGRID_SENDER_EMAIL) {
                 const missing = [];
                 if (!ADMIN_EMAIL) missing.push('ADMIN_EMAIL');
-                if (!EMAIL_USER) missing.push('EMAIL_USER');
-                if (!EMAIL_PASS) missing.push('EMAIL_PASS (API Key)');
-                if (!SENDGRID_SENDER_EMAIL) missing.push('SENDGRID_SENDER_EMAIL');
+                if (!EMAIL_USER) missing.push('EMAIL_USER (Zoho Email)');
+                if (!EMAIL_PASS) missing.push('EMAIL_PASS (Zoho App Password)');
+                if (!SENDGRID_SENDER_EMAIL) missing.push('SENDGRID_SENDER_EMAIL (Sender Email)');
 
                 console.error(`❌ Configuration Error: Missing environment variables: ${missing.join(', ')}`);
                 // This ensures an error is thrown to be caught by the route handler
                 throw new Error(`Email configuration missing: ${missing.join(', ')}`);
             }
+            console.log(`🔑 Current EMAIL_PASS length: ${EMAIL_PASS ? EMAIL_PASS.length : 0}`);
+
 
             const mailOptions = {
+                // NOTE: The sender email must match the EMAIL_USER (your Zoho address)
                 from: `"New Submission" <${SENDGRID_SENDER_EMAIL}>`, 
                 to: ADMIN_EMAIL, // Recipient email address
                 subject: `New Form Submission: ${String(submission.service)}`,
@@ -117,17 +120,17 @@ async function startServer() {
                 `,
             };
             
-            // Nodemailer configuration: SWITCHING TO SENDGRID
+            // Nodemailer configuration: SWITCHED TO ZOHO MAIL
             const transporter = nodemailer.createTransport({
-                host: 'smtp.sendgrid.net', // SendGrid Host
-                // FIX: Change port from 587 to 2525 to bypass potential Railway/ISP firewall issues
-                port: 2525, 
-                secure: false, 
+                host: 'smtp.zoho.com', // Zoho Mail Host
+                port: 587,  // Standard port for Zoho (requires TLS)
+                secure: false, // Use false for port 587
                 requireTLS: true,
+                timeout: 10000, // Explicit 10 second timeout for debugging
                 auth: {
-                    // This must be 'apikey' for SendGrid authentication
+                    // Must be the full Zoho email address (EMAIL_USER)
                     user: EMAIL_USER, 
-                    // This must be the SendGrid API Key for authentication
+                    // Must be the Zoho App Password (EMAIL_PASS)
                     pass: EMAIL_PASS, 
                 },
             });
@@ -135,7 +138,7 @@ async function startServer() {
             try {
                 // CHECK 2: Attempt to send the email
                 await transporter.sendMail(mailOptions);
-                console.log('Email sent successfully via SendGrid!');
+                console.log('Email sent successfully via Zoho Mail!');
             } catch (error) {
                 console.error('--- ERROR: FAILED TO SEND EMAIL ---');
                 // Log the actual error code and message for better debugging
@@ -233,7 +236,7 @@ async function startServer() {
                 res.status(200).json({ message: 'Email resent successfully!' });
             } catch (error) {
                 console.error('❌ Failed to resend email:', error);
-                // MODIFIED: The message returned to the frontend now includes the specific error.
+                // The message returned to the frontend now includes the specific error.
                 res.status(500).json({ message: `Mail Resend Failed: ${error.message || 'Unknown server error.'}` });
             }
         });
