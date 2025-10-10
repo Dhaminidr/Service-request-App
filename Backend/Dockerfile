@@ -22,7 +22,7 @@ RUN ADMIN_EMAIL=$ADMIN_EMAIL \
     EMAIL_SERVICE=$EMAIL_SERVICE \
     EMAIL_USER=$EMAIL_USER \
     JWT_SECRET=$JWT_SECRET \
-    npm ci --omit=dev
+    npm install --omit=dev
 
 # Copy the rest of your application code
 COPY . .
