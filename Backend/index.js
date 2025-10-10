@@ -103,16 +103,15 @@ async function startServer() {
                 `,
             };
             
-            // Nodemailer configuration: LAST-RESORT ATTEMPT - PORT 25 with IP ADDRESS
+            // Nodemailer configuration: Uses standard secure Gmail (Port 465)
+            // This is the correct setup for cloud hosting environments.
             const transporter = nodemailer.createTransport({
-                host: '173.194.73.108', // CRITICAL CHANGE: Using a known Gmail SMTP IP address
-                port: 25, 
-                secure: false, 
-                requireTLS: true, 
-                connectionTimeout: 10000, 
+                host: 'smtp.gmail.com', // Using standard Gmail host
+                port: 465, // Using standard secure SSL port
+                secure: true, // Set to true for port 465
                 auth: {
                     user: EMAIL_USER,
-                    pass: EMAIL_PASS,
+                    pass: EMAIL_PASS, // MUST be a Gmail App Password
                 },
             });
 
@@ -121,7 +120,8 @@ async function startServer() {
                 console.log('Email sent successfully!');
             } catch (error) {
                 console.error('--- ERROR: FAILED TO SEND EMAIL ---');
-                // The error here will tell us if the firewall is blocking the IP directly.
+                // If you see EAUTH, the App Password is wrong. If you see ETIMEDOUT, 
+                // the cloud firewall is still blocking, or the App Password is wrong.
                 console.error(error); 
                 console.error('-------------------------------------');
                 throw new Error('Failed to send email');
@@ -138,11 +138,11 @@ async function startServer() {
                 // FIXED: Use the correct table name 'service_requests'
                 const query = `INSERT INTO ${DB_TABLE_NAME} (name, contact_number, service, description, created_at) VALUES (?, ?, ?, ?, ?)`;
 
-                // 1. SAVE DATA
+                // 1. SAVE DATA (This has been consistently working)
                 await pool.execute(query, submissionData);
                 console.log('✅ Form data saved to database successfully!');
 
-                // 2. RESPOND IMMEDIATELY (Fixes the slow pop-up/no pop-up issue)
+                // 2. RESPOND IMMEDIATELY (Non-blocking)
                 res.status(200).json({ message: 'Form submitted successfully!' });
 
                 // 3. ASYNCHRONOUSLY SEND EMAIL (Non-blocking background task)
@@ -231,4 +231,3 @@ async function startServer() {
 }
 
 startServer();
-
