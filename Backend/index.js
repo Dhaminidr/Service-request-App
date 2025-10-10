@@ -109,13 +109,20 @@ async function startServer() {
             const fromAddress = SENDGRID_SENDER_EMAIL || ADMIN_EMAIL;
             
             if (!fromAddress) {
-                console.error('Email skipped: Sender email address is missing.');
+                console.error('Email skipped: Sender email address is missing (SENDGRID_SENDER_EMAIL or ADMIN_EMAIL).');
                 throw new Error('Sender email address is missing.');
+            }
+            
+            // CRITICAL CHECK: Ensure the recipient address is also set
+            const toAddress = ADMIN_EMAIL;
+            if (!toAddress) {
+                console.error('Email skipped: Recipient email address is missing (ADMIN_EMAIL).');
+                throw new Error('Recipient email address is missing.');
             }
 
             const msg = {
                 // IMPORTANT: The 'from' email MUST be verified in your SendGrid account.
-                to: ADMIN_EMAIL, // Recipient email address
+                to: toAddress, // Recipient email address
                 from: fromAddress, // Use the dedicated sender address
                 subject: `New Form Submission: ${String(submission.service)}`,
                 html: `
