@@ -10,7 +10,8 @@
    "@sendgrid/mail": "^7.7.0",
     "body-parser": "^1.20.2",
     "cors": "^2.8.5",
-    "express": "^4.18.2",
+     "express": "^4.19.2",
+    "nodemailer": "^6.9.13",
     "jsonwebtoken": "^9.0.2",
     "mysql2": "^3.9.2"
   }
