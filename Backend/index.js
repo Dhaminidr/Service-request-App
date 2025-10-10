@@ -5,7 +5,9 @@ process.on('unhandledRejection', (reason, promise) => {
 const express = require('express');
 const bodyParser = require('body-parser');
 const jwt = require('jsonwebtoken');
-const nodemailer = require('nodemailer');
+// IMPORTANT: We are replacing Nodemailer with the official SendGrid package for API use.
+// const nodemailer = require('nodemailer'); 
+const sgMail = require('@sendgrid/mail'); // Requires '@sendgrid/mail' package
 const mysql = require('mysql2/promise');
 const cors = require('cors');
 // NOTE: .env is only used in local development. For Railway, all variables 
@@ -39,9 +41,17 @@ const {
 } = process.env; 
 const JWT_SECRET = process.env.JWT_SECRET;
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
-// EMAIL_USER and EMAIL_PASS are now used here for Gmail
-const EMAIL_USER = process.env.EMAIL_USER;
-const EMAIL_PASS = process.env.EMAIL_PASS; 
+// EMAIL_PASS MUST be the SendGrid API Key (starts with SG.)
+const SENDGRID_API_KEY = process.env.EMAIL_PASS; 
+
+// Set the SendGrid API Key using the repurposed EMAIL_PASS variable
+if (SENDGRID_API_KEY) {
+    sgMail.setApiKey(SENDGRID_API_KEY);
+    console.log('✅ SendGrid API Key loaded.');
+} else {
+    console.error('❌ SENDGRID_API_KEY (from EMAIL_PASS) is missing. Email will fail.');
+}
+
 
 // Connect to MySQL database
 let pool;
@@ -88,10 +98,15 @@ async function startServer() {
         };
 
         const sendSubmissionEmail = async (submission) => {
-            const mailOptions = {
-                // The 'from' email MUST be one that you verify in SendGrid
-                from: `"New Submission" <${EMAIL_USER}>`, 
+            if (!SENDGRID_API_KEY) {
+                console.error('Email skipped: SendGrid API Key not configured.');
+                throw new Error('Email service not configured.');
+            }
+            
+            const msg = {
+                // IMPORTANT: The 'from' email MUST be verified in your SendGrid account.
                 to: ADMIN_EMAIL, // Recipient email address
+                from: ADMIN_EMAIL, // Must be your single verified sender email in SendGrid
                 subject: `New Form Submission: ${String(submission.service)}`,
                 html: `
                     <h2>New Contact Form Submission</h2>
@@ -103,27 +118,15 @@ async function startServer() {
                 `,
             };
             
-            // Nodemailer configuration: Uses standard secure Gmail (Port 465)
-            // This is the correct setup for cloud hosting environments.
-            const transporter = nodemailer.createTransport({
-                host: 'smtp.gmail.com', // Using standard Gmail host
-                port: 465, // Using standard secure SSL port
-                secure: true, // Set to true for port 465
-                auth: {
-                    user: EMAIL_USER,
-                    pass: EMAIL_PASS, // MUST be a Gmail App Password
-                },
-            });
-
             try {
-                await transporter.sendMail(mailOptions);
-                console.log('Email sent successfully!');
+                // Uses the SendGrid API (HTTPS/443), bypassing the SMTP firewall issue
+                await sgMail.send(msg);
+                console.log('Email sent successfully via SendGrid API!');
             } catch (error) {
-                console.error('--- ERROR: FAILED TO SEND EMAIL ---');
-                // If you see EAUTH, the App Password is wrong. If you see ETIMEDOUT, 
-                // the cloud firewall is still blocking, or the App Password is wrong.
-                console.error(error); 
-                console.error('-------------------------------------');
+                console.error('--- ERROR: FAILED TO SEND EMAIL VIA SENDGRID API ---');
+                // Now, if it fails, it will likely be an AUTH error (401) or a sender verification error.
+                console.error('API Error details:', error.response ? error.response.body.errors : error.message); 
+                console.error('----------------------------------------------------');
                 throw new Error('Failed to send email');
             }
         };
@@ -216,7 +219,7 @@ async function startServer() {
             } catch (error) {
                 console.error('❌ Failed to resend email:', error);
                 // This will send the 500 status to the frontend, which should trigger an error pop-up
-                res.status(500).json({ message: 'Failed to resend email. Check backend logs for firewall/timeout error.' });
+                res.status(500).json({ message: 'Failed to resend email. Check backend logs for API key or sender verification error.' });
             }
         });
 
