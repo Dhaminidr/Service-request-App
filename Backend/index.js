@@ -1,65 +1,100 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
-const { Pool } = require('pg');
-const jwt = require('jsonwebtoken');
-
-// --- NEW: Using the direct SendGrid SDK (Requires package @sendgrid/mail) ---
+// Using 'mysql2/promise' for reliable MySQL connection
+const mysql = require('mysql2/promise'); 
+// Using '@sendgrid/mail' for reliable email sending
 const sgMail = require('@sendgrid/mail');
-// ---
+const jwt = require('jsonwebtoken');
 
 // --- Environment Variables Setup (Mandatory for Railway) ---
 const PORT = process.env.PORT || 3000;
-const DATABASE_URL = process.env.DATABASE_URL;
+
+// MySQL Database Credentials
+const { 
+    MYSQL_HOST, 
+    MYSQL_USER, 
+    MYSQL_PASSWORD, 
+    MYSQL_DATABASE,
+    MYSQL_PORT
+} = process.env; 
+
+// Admin Credentials
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'password123';
-const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret_key';
+// IMPORTANT: This must be a long, random, cryptographically secure key
+const JWT_SECRET = process.env.JWT_SECRET || 'DO_NOT_USE_THIS_IN_PRODUCTION_CHANGE_IT_NOW';
 
 // SendGrid Mail Configuration
-const SENDGRID_SENDER_EMAIL = process.env.SENDGRID_SENDER_EMAIL || 'default@example.com';
+// EMAIL_PASS holds the SendGrid API Key (starts with SG.)
+const SENDGRID_API_KEY = process.env.EMAIL_PASS; 
+// The recipient of the submission notification
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@example.com';
-// EMAIL_PASS now holds the SendGrid API Key (starts with SG.)
-const SENDGRID_API_KEY = process.env.EMAIL_PASS;
+// The email address verified in your SendGrid account (the "From" address)
+const SENDGRID_SENDER_EMAIL = process.env.SENDGRID_SENDER_EMAIL || 'default@example.com'; 
+
+// Frontend URL for CORS configuration
+const FRONTEND_URL = process.env.FRONTEND_URL || 'https://service-request-app-production.up.railway.app'; 
 
 // --- SendGrid Initialization ---
 if (SENDGRID_API_KEY) {
     sgMail.setApiKey(SENDGRID_API_KEY);
-    console.log('✅ SendGrid API Key set successfully. Ready to send via HTTP API.');
+    console.log('✅ SendGrid API Key set successfully. Email service ready.');
 } else {
-    console.error('❌ CRITICAL: SENDGRID_API_KEY (environment variable EMAIL_PASS) is missing.');
+    console.error('❌ CRITICAL: SENDGRID_API_KEY (environment variable EMAIL_PASS) is missing. Email notifications will fail.');
 }
 // ---
 
-// Database Connection Pool (PostgreSQL using 'pg')
-const pool = new Pool({
-    connectionString: DATABASE_URL,
-});
+// Database Connection Pool (MySQL)
+let pool;
 
 const app = express();
 
 // Middleware
-app.use(cors()); // Allow cross-origin requests
+app.use(cors({
+    origin: FRONTEND_URL, 
+    credentials: true,
+}));
 app.use(bodyParser.json());
 
-// --- Database Initialization ---
+// --- Database Initialization: Create table if it doesn't exist ---
 async function initDb() {
     try {
-        const client = await pool.connect();
+        if (!MYSQL_HOST || !MYSQL_DATABASE) {
+            console.error('❌ CRITICAL: Missing essential MySQL environment variables (HOST, DATABASE). Cannot connect.');
+            return;
+        }
+
+        pool = mysql.createPool({
+            host: MYSQL_HOST, 
+            port: MYSQL_PORT ? parseInt(MYSQL_PORT, 10) : 3306, 
+            user: MYSQL_USER,
+            password: MYSQL_PASSWORD,
+            database: MYSQL_DATABASE,
+            waitForConnections: true,
+            connectionLimit: 10,
+            queueLimit: 0,
+        });
+
+        // Check connection and ensure table exists
+        const connection = await pool.getConnection();
         const createTableQuery = `
             CREATE TABLE IF NOT EXISTS service_requests (
-                Id SERIAL PRIMARY KEY,
+                Id INT AUTO_INCREMENT PRIMARY KEY,
                 name VARCHAR(255) NOT NULL,
                 contact_number VARCHAR(50),
                 service VARCHAR(100),
                 description TEXT,
-                created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             );
         `;
-        await client.query(createTableQuery);
-        client.release();
-        console.log('Database initialized successfully: service_requests table checked/created.');
+        await connection.execute(createTableQuery);
+        connection.release();
+        console.log('✅ MySQL Database initialized successfully: service_requests table checked/created.');
     } catch (error) {
-        console.error('Error initializing database:', error);
+        console.error('❌ Error initializing MySQL database. Check ENV variables:', error);
+        // Exit process if DB connection is impossible, as the app is unusable without it
+        process.exit(1); 
     }
 }
 
@@ -68,12 +103,12 @@ const sendNotificationEmail = async (submissionData) => {
     const { name, contact_number, service, description } = submissionData;
 
     if (!SENDGRID_API_KEY) {
-        throw new Error('SendGrid API Key is not configured.');
+        throw new Error('SendGrid API Key is not configured (EMAIL_PASS is empty).');
     }
 
     const msg = {
         to: ADMIN_EMAIL, 
-        // Must be a verified single sender in SendGrid
+        // Must be the verified single sender email address
         from: SENDGRID_SENDER_EMAIL, 
         subject: `New Service Request: ${service}`,
         html: `
@@ -95,20 +130,18 @@ const sendNotificationEmail = async (submissionData) => {
     };
 
     try {
-        // Send email via SendGrid HTTP API call (bypassing SMTP)
         await sgMail.send(msg);
         console.log(`✅ Email notification sent successfully to ${ADMIN_EMAIL}`);
     } catch (error) {
         console.error('--- ERROR: FAILED TO SEND EMAIL (SendGrid SDK) ---');
-        // Log the specific error details from SendGrid
         if (error.response) {
             console.error('Response Status:', error.response.statusCode);
-            // Response body can contain specific error messages from SendGrid
+            // Log response body for debugging specific SendGrid errors (e.g., unauthorized)
             console.error('Response Body:', error.response.body); 
         }
         console.error('Error Message:', error.message); 
         console.error('-------------------------------------');
-        throw new Error('Failed to send email');
+        throw new Error('Failed to send email via SendGrid');
     }
 };
 
@@ -123,34 +156,33 @@ app.post('/api/form', async (req, res) => {
     }
 
     try {
-        // 1. SAVE DATA
-        const client = await pool.connect();
-        const result = await client.query(
-            'INSERT INTO service_requests(name, contact_number, service, description) VALUES($1, $2, $3, $4) RETURNING *',
+        // 1. SAVE DATA to MySQL
+        const query = 'INSERT INTO service_requests(name, contact_number, service, description) VALUES(?, ?, ?, ?)';
+        const [result] = await pool.execute(
+            query,
             [fullName, contactNumber, serviceType, projectDescription]
         );
-        client.release();
 
-        const newSubmission = result.rows[0];
+        const newSubmissionId = result.insertId;
 
-        // 2. RESPOND IMMEDIATELY TO THE CLIENT FOR FAST UI RESPONSE
+        // 2. RESPOND IMMEDIATELY TO THE CLIENT
         res.status(201).json({ 
             message: 'Submission successful. You will be contacted soon.', 
-            data: newSubmission 
+            data: { id: newSubmissionId } // Return the new ID
         });
 
         // 3. ASYNCHRONOUSLY SEND EMAIL (Non-blocking background task)
         sendNotificationEmail({
-            name: newSubmission.name,
-            contact_number: newSubmission.contact_number,
-            service: newSubmission.service,
-            description: newSubmission.description,
+            name: fullName,
+            contact_number: contactNumber,
+            service: serviceType,
+            description: projectDescription,
         })
         .then(() => console.log('✅ Asynchronous email notification finished.'))
         .catch((emailError) => console.error('❌ Asynchronous email failed after successful DB save:', emailError.message));
 
     } catch (error) {
-        console.error('Error during form submission (DB failure):', error);
+        console.error('❌ Error during form submission (DB failure):', error);
         res.status(500).json({ message: 'Internal server error during database operation.' });
     }
 });
@@ -175,6 +207,7 @@ const authenticateToken = (req, res, next) => {
 app.post('/api/admin/login', (req, res) => {
     const { username, password } = req.body;
 
+    // Use credentials from environment variables
     if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
         const user = { username: ADMIN_USERNAME };
         const accessToken = jwt.sign(user, JWT_SECRET, { expiresIn: '1h' });
@@ -187,11 +220,17 @@ app.post('/api/admin/login', (req, res) => {
 // 3. GET /api/forms - Retrieve all submissions (Admin protected)
 app.get('/api/forms', authenticateToken, async (req, res) => {
     try {
-        const client = await pool.connect();
         // Order by creation time, descending
-        const result = await client.query('SELECT * FROM service_requests ORDER BY created_at DESC');
-        client.release();
-        res.json(result.rows);
+        const query = 'SELECT * FROM service_requests ORDER BY created_at DESC';
+        const [rows] = await pool.execute(query);
+        
+        // Match the frontend's expected structure (Id capital I)
+        const submissions = rows.map(row => ({
+            ...row,
+            Id: row.Id 
+        }));
+
+        res.json(submissions);
     } catch (error) {
         console.error('Error fetching submissions:', error);
         res.status(500).json({ message: 'Internal server error fetching data.' });
@@ -203,16 +242,16 @@ app.post('/api/forms/:id/resend', authenticateToken, async (req, res) => {
     const submissionId = req.params.id;
 
     try {
-        const client = await pool.connect();
-        const result = await client.query('SELECT * FROM service_requests WHERE Id = $1', [submissionId]);
-        client.release();
+        const query = 'SELECT * FROM service_requests WHERE Id = ?';
+        const [rows] = await pool.execute(query, [submissionId]);
 
-        if (result.rows.length === 0) {
+        if (rows.length === 0) {
             return res.status(404).json({ message: 'Submission not found.' });
         }
 
-        const submission = result.rows[0];
+        const submission = rows[0];
 
+        // Resend the notification
         await sendNotificationEmail({
             name: submission.name,
             contact_number: submission.contact_number,
@@ -224,9 +263,9 @@ app.post('/api/forms/:id/resend', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('Error during resend operation:', error);
         
-        // This catches the error thrown by sendNotificationEmail, ensuring the frontend gets the error message
+        // Ensure error message is passed to the frontend
         res.status(500).json({ 
-            message: 'Failed to resend email. Check backend logs for API failure details.',
+            message: error.message || 'Failed to resend email. Check backend logs for API failure details.',
             error: error.message
         });
     }
@@ -238,4 +277,3 @@ app.listen(PORT, async () => {
     await initDb();
     console.log(`Server running on port ${PORT}`);
 });
-
