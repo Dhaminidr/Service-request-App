@@ -1,251 +1,241 @@
-// FINAL VERSION: Zoho Mail Configuration (Port 465) with increased timeout to fix ETIMEDOUT errors.
-
-// Global error handling
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-});
-
 const express = require('express');
 const bodyParser = require('body-parser');
-const jwt = require('jsonwebtoken');
-const nodemailer = require('nodemailer');
-const mysql = require('mysql2/promise');
 const cors = require('cors');
-// NOTE: .env is only used in local development. For Railway, all variables 
-// must be added directly to the Railway service's Variables tab.
-require('dotenv').config({ path: '.env' }); 
+const { Pool } = require('pg');
+const jwt = require('jsonwebtoken');
 
-const app = express(); 
-const port = 5000;
+// --- NEW: Using the direct SendGrid SDK (Requires package @sendgrid/mail) ---
+const sgMail = require('@sendgrid/mail');
+// ---
 
+// --- Environment Variables Setup (Mandatory for Railway) ---
+const PORT = process.env.PORT || 3000;
+const DATABASE_URL = process.env.DATABASE_URL;
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'password123';
+const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret_key';
 
-const FRONTEND_URL = 'https://glorious-enthusiasm-production.up.railway.app'; 
+// SendGrid Mail Configuration
+const SENDGRID_SENDER_EMAIL = process.env.SENDGRID_SENDER_EMAIL || 'default@example.com';
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@example.com';
+// EMAIL_PASS now holds the SendGrid API Key (starts with SG.)
+const SENDGRID_API_KEY = process.env.EMAIL_PASS;
 
+// --- SendGrid Initialization ---
+if (SENDGRID_API_KEY) {
+    sgMail.setApiKey(SENDGRID_API_KEY);
+    console.log('✅ SendGrid API Key set successfully. Ready to send via HTTP API.');
+} else {
+    console.error('❌ CRITICAL: SENDGRID_API_KEY (environment variable EMAIL_PASS) is missing.');
+}
+// ---
 
-app.use(cors({
-    origin: FRONTEND_URL, 
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+// Database Connection Pool (PostgreSQL using 'pg')
+const pool = new Pool({
+    connectionString: DATABASE_URL,
+});
 
+const app = express();
 
-// Get credentials from process.env (Railway Variables)
-const { 
-    MYSQL_HOST, 
-    MYSQL_USER, 
-    MYSQL_PASSWORD, 
-    MYSQL_DATABASE,
-    MYSQL_PORT
-} = process.env; 
-const JWT_SECRET = process.env.JWT_SECRET;
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
-// REVERTED: Now expecting Zoho credentials from environment variables
-const EMAIL_USER = process.env.EMAIL_USER; // Your Zoho email (e.g., dhaminidr_27@zohomail.in)
-const EMAIL_PASS = process.env.EMAIL_PASS; // Your Zoho App Password
+// Middleware
+app.use(cors()); // Allow cross-origin requests
+app.use(bodyParser.json());
 
-// Connect to MySQL database
-let pool;
-async function startServer() {
+// --- Database Initialization ---
+async function initDb() {
     try {
-        
-        pool = mysql.createPool({
-            // MUST be the INTERNAL Railway Hostname (e.g., mysqldb.internal)
-            host: MYSQL_HOST, 
-            // Use the port provided by Railway, or 3306 as the common internal port
-            port: MYSQL_PORT ? parseInt(MYSQL_PORT, 10) : 3306, 
-            user: MYSQL_USER,
-            password: MYSQL_PASSWORD,
-            database: MYSQL_DATABASE,
-            waitForConnections: true,
-            connectionLimit: 10,
-            queueLimit: 0,
-        });
-
-        // Check the connection by executing a simple query
-        await pool.getConnection();
-        console.log('✅ MySQL connected successfully!');
-        
-        // Middleware
-        app.use(bodyParser.json());
-    
-
-        // Admin credentials (for simplicity)
-        const adminUser = {
-            username: 'admin',
-            password: 'admin_password', // Change this in a real application!
-        };
-
-        // Authentication Middleware
-        const auth = (req, res, next) => {
-            try {
-                const token = req.headers.authorization.split(' ')[1];
-                const decoded = jwt.verify(token, JWT_SECRET);
-                req.userData = decoded;
-                next();
-            } catch (error) {
-                return res.status(401).json({ message: 'Authentication failed!' });
-            }
-        };
-
-        // MODIFIED: Updated for Zoho settings on PORT 465 with longer timeout
-        const sendSubmissionEmail = async (submission) => {
-            
-            // CHECK 1: Ensure critical variables are present
-            if (!ADMIN_EMAIL || !EMAIL_USER || !EMAIL_PASS) {
-                const missing = [];
-                if (!ADMIN_EMAIL) missing.push('ADMIN_EMAIL');
-                if (!EMAIL_USER) missing.push('EMAIL_USER (Zoho Email)');
-                if (!EMAIL_PASS) missing.push('EMAIL_PASS (Zoho App Password)');
-
-                console.error(`❌ Configuration Error: Missing environment variables: ${missing.join(', ')}`);
-                throw new Error(`Email configuration missing: ${missing.join(', ')}`);
-            }
-            console.log(`🔑 Current EMAIL_PASS length: ${EMAIL_PASS ? EMAIL_PASS.length : 0}`);
-
-
-            const mailOptions = {
-                // The 'from' email should be the Zoho account email
-                from: `"New Submission" <${EMAIL_USER}>`, 
-                to: ADMIN_EMAIL, // Recipient email address
-                subject: `New Form Submission: ${String(submission.service)}`,
-                html: `
-                    <h2>New Contact Form Submission</h2>
-                    <p><strong>Name:</strong> ${String(submission.name)}</p>
-                    <p><strong>Contact Number:</strong> ${String(submission.contact_number)}</p>
-                    <p><strong>Service:</strong> ${String(submission.service)}</p>
-                    <p><strong>Description:</strong> ${String(submission.description)}</p>
-                    <p><strong>Submission Date:</strong> ${String(submission.created_at)}</p>
-                `,
-            };
-            
-            // Nodemailer configuration: ZOHO MAIL ON PORT 465 (SMTPS)
-            const transporter = nodemailer.createTransport({
-                host: 'smtp.zoho.eu', // Zoho Host
-                port: 465,  // Secure Port for SMTPS
-                secure: true, // Use SMTPS
-                // *** CRITICAL FIX: Increased timeout to 30 seconds (30000ms) to bypass previous ETIMEDOUT issues ***
-                connectionTimeout: 30000, 
-                auth: {
-                    user: EMAIL_USER, // Your full Zoho email address
-                    pass: EMAIL_PASS, // Your Zoho App Password
-                },
-            });
-
-            try {
-                // CHECK 2: Attempt to send the email
-                await transporter.sendMail(mailOptions);
-                console.log('✅ Email sent successfully via Zoho (Port 465)!');
-            } catch (error) {
-                console.error('--- ERROR: FAILED TO SEND EMAIL ---');
-                // Log the actual error code and message for better debugging
-                console.error(`Error Code: ${error.code || 'N/A'}`);
-                console.error(`Error Message: ${error.message}`); 
-                console.error('-------------------------------------');
-                // Throw the error so the calling route handler can catch it and return a 500
-                throw new Error(error.message || 'Failed to send email due to transport error.');
-            }
-        };
-
-        // Routes
-        app.post('/api/form', async (req, res) => {
-            console.log('Received a POST request to /api/form');
-            try {
-                const { fullName, contactNumber, serviceType, projectDescription } = req.body;
-                const currentDate = new Date();
-                const submissionData = [fullName, contactNumber, serviceType, projectDescription, currentDate];
-                const query = 'INSERT INTO submissions (name, contact_number, service, description, created_at) VALUES (?, ?, ?, ?, ?)';
-
-                // 1. SAVE DATA
-                await pool.execute(query, submissionData);
-                console.log('✅ Form data saved to database successfully!');
-
-                // 2. RESPOND IMMEDIATELY (Fixes the slow pop-up/no pop-up issue by responding before email)
-                res.status(200).json({ message: 'Form submitted successfully!' });
-
-                // 3. ASYNCHRONOUSLY SEND EMAIL (Non-blocking background task)
-                const emailData = {
-                    name: fullName,
-                    contact_number: contactNumber,
-                    service: serviceType,
-                    description: projectDescription,
-                    created_at: currentDate,
-                };
-                
-                // We use .then/.catch here and DON'T await, so the response isn't blocked by the 30s email timeout.
-                sendSubmissionEmail(emailData) 
-                    .then(() => console.log('✅ Asynchronous email notification sent!'))
-                    .catch((emailError) => console.error('❌ Asynchronous email failed:', emailError.message));
-                
-            } catch (error) {
-                console.error('❌ CRITICAL Submission error (DB Failure):', error);
-                // This block is executed if DB connection/write fails.
-                res.status(500).json({ message: 'Error submitting form. Please check backend logs (DB issue).' });
-            }
-        });
-
-        app.post('/api/admin/login', async (req, res) => {
-            try {
-                const { username, password } = req.body;
-                if (username === adminUser.username && password === adminUser.password) {
-                    const token = jwt.sign({ username: adminUser.username }, JWT_SECRET, { expiresIn: '1h' });
-                    return res.status(200).json({ token });
-                }
-                res.status(401).json({ message: 'Invalid credentials' });
-            } catch (error) {
-                res.status(500).json({ message: 'Login failed' });
-            }
-        });
-
-        app.get('/api/forms', auth, async (req, res) => {
-            try {
-                const query = 'SELECT * FROM submissions ORDER BY created_at DESC';
-                const [rows] = await pool.execute(query);
-                res.status(200).json(rows);
-            } catch (error) {
-                console.error('❌ Failed to fetch submissions:', error);
-                res.status(500).json({ message: 'Failed to fetch submissions' });
-            }
-        });
-
-        app.post('/api/forms/:id/resend', auth, async (req, res) => {
-            try {
-                const query = 'SELECT * FROM submissions WHERE Id = ?';
-                const [rows] = await pool.execute(query, [req.params.id]);
-                const submission = rows[0];
-
-                if (!submission) {
-                    return res.status(404).json({ message: 'Submission not found' });
-                }
-
-                const emailData = {
-                    name: submission.name,
-                    contact_number: submission.contact_number,
-                    service: submission.service,
-                    description: submission.description,
-                    // Use a more readable local string format for the resend
-                    created_at: new Date(submission.created_at).toLocaleString(), 
-                };
-
-                // The entire route relies on the corrected sendSubmissionEmail function
-                await sendSubmissionEmail(emailData);
-
-                res.status(200).json({ message: 'Email resent successfully!' });
-            } catch (error) {
-                console.error('❌ Failed to resend email:', error);
-                // The message returned to the frontend now includes the specific error.
-                res.status(500).json({ message: `Mail Resend Failed: ${error.message || 'Unknown server error.'}` });
-            }
-        });
-
-        app.listen(port, () => {
-            console.log(`Server is running on http://localhost:${port}`);
-        });
-
+        const client = await pool.connect();
+        const createTableQuery = `
+            CREATE TABLE IF NOT EXISTS service_requests (
+                Id SERIAL PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                contact_number VARCHAR(50),
+                service VARCHAR(100),
+                description TEXT,
+                created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            );
+        `;
+        await client.query(createTableQuery);
+        client.release();
+        console.log('Database initialized successfully: service_requests table checked/created.');
     } catch (error) {
-        console.error('❌ Failed to connect to MySQL:', error);
-        process.exit(1);
+        console.error('Error initializing database:', error);
     }
 }
 
-startServer();
+// Function to send email using the direct SendGrid SDK
+const sendNotificationEmail = async (submissionData) => {
+    const { name, contact_number, service, description } = submissionData;
+
+    if (!SENDGRID_API_KEY) {
+        throw new Error('SendGrid API Key is not configured.');
+    }
+
+    const msg = {
+        to: ADMIN_EMAIL, 
+        // Must be a verified single sender in SendGrid
+        from: SENDGRID_SENDER_EMAIL, 
+        subject: `New Service Request: ${service}`,
+        html: `
+            <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd;">
+                <h2 style="color: #333;">New Request from ${name}</h2>
+                <p>A new service request has been submitted through the form.</p>
+                <hr style="border: 0; border-top: 1px solid #eee;">
+                <p><strong>Contact Number:</strong> ${contact_number}</p>
+                <p><strong>Service Type:</strong> ${service}</p>
+                <p><strong>Project Description:</strong></p>
+                <div style="padding: 10px; border: 1px solid #ccc; background-color: #f9f9f9;">
+                    ${description}
+                </div>
+                <p style="margin-top: 20px; font-size: 0.9em; color: #777;">
+                    Please log into the admin dashboard to review.
+                </p>
+            </div>
+        `,
+    };
+
+    try {
+        // Send email via SendGrid HTTP API call (bypassing SMTP)
+        await sgMail.send(msg);
+        console.log(`✅ Email notification sent successfully to ${ADMIN_EMAIL}`);
+    } catch (error) {
+        console.error('--- ERROR: FAILED TO SEND EMAIL (SendGrid SDK) ---');
+        // Log the specific error details from SendGrid
+        if (error.response) {
+            console.error('Response Status:', error.response.statusCode);
+            // Response body can contain specific error messages from SendGrid
+            console.error('Response Body:', error.response.body); 
+        }
+        console.error('Error Message:', error.message); 
+        console.error('-------------------------------------');
+        throw new Error('Failed to send email');
+    }
+};
+
+// --- API Endpoints ---
+
+// 1. POST /api/form - Handle new service request submission (Non-Blocking Email)
+app.post('/api/form', async (req, res) => {
+    const { fullName, contactNumber, serviceType, projectDescription } = req.body;
+
+    if (!fullName || !contactNumber || !serviceType || !projectDescription) {
+        return res.status(400).json({ message: 'All fields are required.' });
+    }
+
+    try {
+        // 1. SAVE DATA
+        const client = await pool.connect();
+        const result = await client.query(
+            'INSERT INTO service_requests(name, contact_number, service, description) VALUES($1, $2, $3, $4) RETURNING *',
+            [fullName, contactNumber, serviceType, projectDescription]
+        );
+        client.release();
+
+        const newSubmission = result.rows[0];
+
+        // 2. RESPOND IMMEDIATELY TO THE CLIENT FOR FAST UI RESPONSE
+        res.status(201).json({ 
+            message: 'Submission successful. You will be contacted soon.', 
+            data: newSubmission 
+        });
+
+        // 3. ASYNCHRONOUSLY SEND EMAIL (Non-blocking background task)
+        sendNotificationEmail({
+            name: newSubmission.name,
+            contact_number: newSubmission.contact_number,
+            service: newSubmission.service,
+            description: newSubmission.description,
+        })
+        .then(() => console.log('✅ Asynchronous email notification finished.'))
+        .catch((emailError) => console.error('❌ Asynchronous email failed after successful DB save:', emailError.message));
+
+    } catch (error) {
+        console.error('Error during form submission (DB failure):', error);
+        res.status(500).json({ message: 'Internal server error during database operation.' });
+    }
+});
+
+// --- Admin Authentication and Authorization ---
+
+// Authentication Middleware
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1]; // Expects 'Bearer TOKEN'
+
+    if (token == null) return res.sendStatus(401); // Unauthorized
+
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) return res.sendStatus(403); // Forbidden (Invalid token)
+        req.user = user;
+        next();
+    });
+};
+
+// 2. POST /api/admin/login - Admin login
+app.post('/api/admin/login', (req, res) => {
+    const { username, password } = req.body;
+
+    if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
+        const user = { username: ADMIN_USERNAME };
+        const accessToken = jwt.sign(user, JWT_SECRET, { expiresIn: '1h' });
+        res.json({ token: accessToken });
+    } else {
+        res.status(401).json({ message: 'Invalid credentials' });
+    }
+});
+
+// 3. GET /api/forms - Retrieve all submissions (Admin protected)
+app.get('/api/forms', authenticateToken, async (req, res) => {
+    try {
+        const client = await pool.connect();
+        // Order by creation time, descending
+        const result = await client.query('SELECT * FROM service_requests ORDER BY created_at DESC');
+        client.release();
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Error fetching submissions:', error);
+        res.status(500).json({ message: 'Internal server error fetching data.' });
+    }
+});
+
+// 4. POST /api/forms/:id/resend - Resend email notification (Admin protected)
+app.post('/api/forms/:id/resend', authenticateToken, async (req, res) => {
+    const submissionId = req.params.id;
+
+    try {
+        const client = await pool.connect();
+        const result = await client.query('SELECT * FROM service_requests WHERE Id = $1', [submissionId]);
+        client.release();
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: 'Submission not found.' });
+        }
+
+        const submission = result.rows[0];
+
+        await sendNotificationEmail({
+            name: submission.name,
+            contact_number: submission.contact_number,
+            service: submission.service,
+            description: submission.description,
+        });
+
+        res.status(200).json({ message: 'Email successfully resent.' });
+    } catch (error) {
+        console.error('Error during resend operation:', error);
+        
+        // This catches the error thrown by sendNotificationEmail, ensuring the frontend gets the error message
+        res.status(500).json({ 
+            message: 'Failed to resend email. Check backend logs for API failure details.',
+            error: error.message
+        });
+    }
+});
+
+
+// Start server and initialize DB
+app.listen(PORT, async () => {
+    await initDb();
+    console.log(`Server running on port ${PORT}`);
+});
+
