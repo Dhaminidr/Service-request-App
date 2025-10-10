@@ -41,6 +41,8 @@ const {
 } = process.env; 
 const JWT_SECRET = process.env.JWT_SECRET;
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
+// NEW: Import the dedicated variable for the SendGrid verified sender.
+const SENDGRID_SENDER_EMAIL = process.env.SENDGRID_SENDER_EMAIL; 
 // EMAIL_PASS MUST be the SendGrid API Key (starts with SG.)
 const SENDGRID_API_KEY = process.env.EMAIL_PASS; 
 
@@ -103,10 +105,18 @@ async function startServer() {
                 throw new Error('Email service not configured.');
             }
             
+            // Prioritize the dedicated verified sender email, falling back to ADMIN_EMAIL if necessary
+            const fromAddress = SENDGRID_SENDER_EMAIL || ADMIN_EMAIL;
+            
+            if (!fromAddress) {
+                console.error('Email skipped: Sender email address is missing.');
+                throw new Error('Sender email address is missing.');
+            }
+
             const msg = {
                 // IMPORTANT: The 'from' email MUST be verified in your SendGrid account.
                 to: ADMIN_EMAIL, // Recipient email address
-                from: ADMIN_EMAIL, // Must be your single verified sender email in SendGrid
+                from: fromAddress, // Use the dedicated sender address
                 subject: `New Form Submission: ${String(submission.service)}`,
                 html: `
                     <h2>New Contact Form Submission</h2>
