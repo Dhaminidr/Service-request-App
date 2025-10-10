@@ -1,5 +1,4 @@
-// Final corrected file for Zoho Mail on Port 465 (SMTPS)
-// Replace the ENTIRE contents of your backend file with this code.
+// FINAL VERSION: Zoho Mail Configuration (Port 465) with increased timeout to fix ETIMEDOUT errors.
 
 // Global error handling
 process.on('unhandledRejection', (reason, promise) => {
@@ -41,11 +40,9 @@ const {
 } = process.env; 
 const JWT_SECRET = process.env.JWT_SECRET;
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
-// EMAIL_USER (must be the full Zoho email address) and EMAIL_PASS (must be the Zoho App Password)
-const EMAIL_USER = process.env.EMAIL_USER;
-const EMAIL_PASS = process.env.EMAIL_PASS; 
-// This should be set in your Railway variables to the verified sender email address
-const SENDGRID_SENDER_EMAIL = process.env.SENDGRID_SENDER_EMAIL; 
+// REVERTED: Now expecting Zoho credentials from environment variables
+const EMAIL_USER = process.env.EMAIL_USER; // Your Zoho email (e.g., dhaminidr_27@zohomail.in)
+const EMAIL_PASS = process.env.EMAIL_PASS; // Your Zoho App Password
 
 // Connect to MySQL database
 let pool;
@@ -91,27 +88,25 @@ async function startServer() {
             }
         };
 
-        // MODIFIED: Updated for Zoho Mail settings on PORT 465
+        // MODIFIED: Updated for Zoho settings on PORT 465 with longer timeout
         const sendSubmissionEmail = async (submission) => {
             
             // CHECK 1: Ensure critical variables are present
-            if (!ADMIN_EMAIL || !EMAIL_USER || !EMAIL_PASS || !SENDGRID_SENDER_EMAIL) {
+            if (!ADMIN_EMAIL || !EMAIL_USER || !EMAIL_PASS) {
                 const missing = [];
                 if (!ADMIN_EMAIL) missing.push('ADMIN_EMAIL');
                 if (!EMAIL_USER) missing.push('EMAIL_USER (Zoho Email)');
                 if (!EMAIL_PASS) missing.push('EMAIL_PASS (Zoho App Password)');
-                if (!SENDGRID_SENDER_EMAIL) missing.push('SENDGRID_SENDER_EMAIL (Sender Email)');
 
                 console.error(`❌ Configuration Error: Missing environment variables: ${missing.join(', ')}`);
-                // This ensures an error is thrown to be caught by the route handler
                 throw new Error(`Email configuration missing: ${missing.join(', ')}`);
             }
             console.log(`🔑 Current EMAIL_PASS length: ${EMAIL_PASS ? EMAIL_PASS.length : 0}`);
 
 
             const mailOptions = {
-                // NOTE: The sender email must match the EMAIL_USER (your Zoho address)
-                from: `"New Submission" <${SENDGRID_SENDER_EMAIL}>`, 
+                // The 'from' email should be the Zoho account email
+                from: `"New Submission" <${EMAIL_USER}>`, 
                 to: ADMIN_EMAIL, // Recipient email address
                 subject: `New Form Submission: ${String(submission.service)}`,
                 html: `
@@ -126,22 +121,21 @@ async function startServer() {
             
             // Nodemailer configuration: ZOHO MAIL ON PORT 465 (SMTPS)
             const transporter = nodemailer.createTransport({
-                host: 'smtp.zoho.com', // Zoho Mail Host
-                port: 465,  // SMTPS port 
-                secure: true, // MUST be true for port 465
-                timeout: 15000, // Increased timeout to 15 seconds for network testing
+                host: 'smtp.zoho.eu', // Zoho Host
+                port: 465,  // Secure Port for SMTPS
+                secure: true, // Use SMTPS
+                // *** CRITICAL FIX: Increased timeout to 30 seconds (30000ms) to bypass previous ETIMEDOUT issues ***
+                connectionTimeout: 30000, 
                 auth: {
-                    // Must be the full Zoho email address (EMAIL_USER)
-                    user: EMAIL_USER, 
-                    // Must be the Zoho App Password (EMAIL_PASS)
-                    pass: EMAIL_PASS, 
+                    user: EMAIL_USER, // Your full Zoho email address
+                    pass: EMAIL_PASS, // Your Zoho App Password
                 },
             });
 
             try {
                 // CHECK 2: Attempt to send the email
                 await transporter.sendMail(mailOptions);
-                console.log('✅ Email sent successfully via Zoho Mail (Port 465)!');
+                console.log('✅ Email sent successfully via Zoho (Port 465)!');
             } catch (error) {
                 console.error('--- ERROR: FAILED TO SEND EMAIL ---');
                 // Log the actual error code and message for better debugging
@@ -166,7 +160,7 @@ async function startServer() {
                 await pool.execute(query, submissionData);
                 console.log('✅ Form data saved to database successfully!');
 
-                // 2. RESPOND IMMEDIATELY (Fixes the slow pop-up/no pop-up issue)
+                // 2. RESPOND IMMEDIATELY (Fixes the slow pop-up/no pop-up issue by responding before email)
                 res.status(200).json({ message: 'Form submitted successfully!' });
 
                 // 3. ASYNCHRONOUSLY SEND EMAIL (Non-blocking background task)
@@ -178,7 +172,7 @@ async function startServer() {
                     created_at: currentDate,
                 };
                 
-                // We use .then/.catch here and DON'T await, so the response isn't blocked.
+                // We use .then/.catch here and DON'T await, so the response isn't blocked by the 30s email timeout.
                 sendSubmissionEmail(emailData) 
                     .then(() => console.log('✅ Asynchronous email notification sent!'))
                     .catch((emailError) => console.error('❌ Asynchronous email failed:', emailError.message));
